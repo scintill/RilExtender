@@ -117,6 +117,8 @@ static jclass loadClassFromDex(JNIEnv *env, const char *classNameSlash, const ch
 }
 
 static int my_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout) {
+#define RETURN() return orig_epoll_wait(epfd, events, maxevents, timeout);
+
 	ALOGI("my_epoll_wait()");
 
 	int (*orig_epoll_wait)(int epfd, struct epoll_event *events, int maxevents, int timeout);
@@ -125,29 +127,53 @@ static int my_epoll_wait(int epfd, struct epoll_event *events, int maxevents, in
 	hook_precall(&eph);
 
 	void *pLibdvm = dlopen("libdvm.so", RTLD_LAZY);
-	/*Thread*/void* (*dvmThreadSelf)() = dlsym(pLibdvm, "_Z13dvmThreadSelfv");
-	JNIEnv* (*dvmCreateJNIEnv)(/*Thread*/void*) = dlsym(pLibdvm, "_Z15dvmCreateJNIEnvP6Thread");
-	void (*dvmDestroyJNIEnv)(JNIEnv *) = dlsym(pLibdvm, "_Z16dvmDestroyJNIEnvP7_JNIEnv");
+	/*Thread*/void* (*dvmThreadSelf)() = 0;
+	JNIEnv* (*dvmCreateJNIEnv)(/*Thread*/void*) = 0;
+	void (*dvmDestroyJNIEnv)(JNIEnv *) = 0;
+
+	if (pLibdvm) {
+		dvmThreadSelf = dlsym(pLibdvm, "_Z13dvmThreadSelfv");
+		dvmCreateJNIEnv = dlsym(pLibdvm, "_Z15dvmCreateJNIEnvP6Thread");
+		dvmDestroyJNIEnv = dlsym(pLibdvm, "_Z16dvmDestroyJNIEnvP7_JNIEnv");
+	}
 
 	ALOGD("dvmThreadSelf = %p", dvmThreadSelf);
 	ALOGD("dvmCreateJNIEnv = %p", dvmCreateJNIEnv);
 	ALOGD("dvmDestroyJNIEnv = %p", dvmDestroyJNIEnv);
 
-	if (dvmThreadSelf && dvmCreateJNIEnv && dvmDestroyJNIEnv) {
-		JNIEnv* env = dvmCreateJNIEnv(dvmThreadSelf());
-		ALOGD("JNIEnv* = %p", env);
-
-		loadClassFromDex(env, "net/scintill/rilextender/RilExtender", "net.scintill.rilextender.RilExtender",
-			"/data/data/net.scintill.rilextender/app_rilextender/rilextender.dex", "/data/data/net.scintill.rilextender/app_rilextender-cache");
-
-		dvmDestroyJNIEnv(env);
-	} else {
-		ALOGE("error finding libdvm funcs: %p %p %p", dvmThreadSelf, dvmCreateJNIEnv, dvmDestroyJNIEnv);
+	if (!(dvmThreadSelf && dvmCreateJNIEnv && dvmDestroyJNIEnv)) {
+		ALOGE("error finding libdvm funcs: %p %p %p %p", pLibdvm, dvmThreadSelf, dvmCreateJNIEnv, dvmDestroyJNIEnv);
+		RETURN();
 	}
 
-	// call original function
-	int res = orig_epoll_wait(epfd, events, maxevents, timeout);
-	return res;
+	void *pThread = dvmThreadSelf();
+	ALOGD("pThread = %p", pThread);
+	if (!pThread) {
+		ALOGE("error getting dvmThreadSelf()");
+		RETURN();
+	}
+
+	JNIEnv* env = dvmCreateJNIEnv(pThread);
+	ALOGD("JNIEnv* = %p", env);
+
+	if (!env) {
+		ALOGE("error getting JNIEnv");
+		RETURN();
+	}
+
+	jclass c = loadClassFromDex(env, "net/scintill/rilextender/RilExtender", "net.scintill.rilextender.RilExtender",
+		"/data/data/net.scintill.rilextender/app_rilextender/rilextender.dex", "/data/data/net.scintill.rilextender/app_rilextender-cache");
+
+	if (!c) {
+		ALOGE("error in loadClassFromDex");
+		// fall through
+	}
+
+	dvmDestroyJNIEnv(env);
+
+	RETURN();
+
+#undef RETURN()
 }
 
 
