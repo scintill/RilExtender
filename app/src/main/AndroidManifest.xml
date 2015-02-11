@@ -1,0 +1,17 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="net.scintill.rilextender">
+
+    <application android:allowBackup="true" android:label="@string/app_name"
+        android:icon="@drawable/ic_launcher" android:theme="@style/AppTheme">
+
+        <service android:name=".RilExtenderInstaller" android:exported="true"
+            android:permission="net.scintill.rilextender.RILEXTENDER_CLIENT" />
+
+    </application>
+    
+    <permission android:name="net.scintill.rilextender.RILEXTENDER_CLIENT"
+        android:label="@string/perm_RILEXTENDER_CLIENT_label"
+        android:description="@string/perm_RILEXTENDER_CLIENT_desc"
+        android:permissionGroup="android.permission-group.DEVELOPMENT_TOOLS" />
+
+</manifest>
