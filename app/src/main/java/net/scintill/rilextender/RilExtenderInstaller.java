@@ -52,11 +52,6 @@ public class RilExtenderInstaller extends IntentService {
         super("RilExtenderInstaller");
         setIntentRedelivery(true);
 
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.KITKAT) {
-            throw new UnsupportedOperationException("RilExtender probably won't work with Lollipop"+
-                    " (more accurately, the ART runtime)");
-        }
-
         mInjectedPid = 0;
         mContext = this;
     }

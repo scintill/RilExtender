@@ -116,6 +116,44 @@ static jclass loadClassFromDex(JNIEnv *env, const char *classNameSlash, const ch
 	return clTargetClass;
 }
 
+JNIEnv *findJniEnv(const char *pLibpath) {
+	void *pLibVm = dlopen(pLibpath, RTLD_LAZY);
+
+	if (!pLibpath) {
+		return 0;
+	}
+
+	jint (*JNI_GetCreatedJavaVMs)(JavaVM**, jsize, jsize*) = dlsym(pLibVm, "JNI_GetCreatedJavaVMs");
+	if (!JNI_GetCreatedJavaVMs) {
+		ALOGE("error finding JNI_GetCreatedJavaVMs - %s", pLibpath);
+		dlclose(pLibVm);
+		return 0;
+	}
+
+	JavaVM *jvm;
+	jsize sz;
+
+	if (JNI_GetCreatedJavaVMs(&jvm, 1, &sz) != JNI_OK) {
+		ALOGE("error in JNI_GetCreatedJavaVMs - %s", pLibpath);
+		dlclose(pLibVm);
+		return 0;
+	}
+	if (sz == 0 || !jvm) {
+		ALOGE("didn't find a VM - %s", pLibpath);
+		dlclose(pLibVm);
+		return 0;
+	}
+
+	JNIEnv *env;
+	if ((*jvm)->GetEnv(jvm, (void**)&env, JNI_VERSION_1_6) != JNI_OK || !env) {
+		ALOGE("error in JVM::GetEnv - %s", pLibpath);
+		dlclose(pLibVm);
+		return 0;
+	}
+
+	return env;
+}
+
 static int my_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout) {
 #define RETURN() return orig_epoll_wait(epfd, events, maxevents, timeout);
 
@@ -126,39 +164,14 @@ static int my_epoll_wait(int epfd, struct epoll_event *events, int maxevents, in
 	// remove hook for epoll_wait
 	hook_precall(&eph);
 
-	void *pLibdvm = dlopen("libdvm.so", RTLD_LAZY);
-	/*Thread*/void* (*dvmThreadSelf)() = 0;
-	JNIEnv* (*dvmCreateJNIEnv)(/*Thread*/void*) = 0;
-	void (*dvmDestroyJNIEnv)(JNIEnv *) = 0;
-
-	if (pLibdvm) {
-		dvmThreadSelf = dlsym(pLibdvm, "_Z13dvmThreadSelfv");
-		dvmCreateJNIEnv = dlsym(pLibdvm, "_Z15dvmCreateJNIEnvP6Thread");
-		dvmDestroyJNIEnv = dlsym(pLibdvm, "_Z16dvmDestroyJNIEnvP7_JNIEnv");
-	}
-
-	ALOGD("dvmThreadSelf = %p", dvmThreadSelf);
-	ALOGD("dvmCreateJNIEnv = %p", dvmCreateJNIEnv);
-	ALOGD("dvmDestroyJNIEnv = %p", dvmDestroyJNIEnv);
-
-	if (!(dvmThreadSelf && dvmCreateJNIEnv && dvmDestroyJNIEnv)) {
-		ALOGE("error finding libdvm funcs: %p %p %p %p", pLibdvm, dvmThreadSelf, dvmCreateJNIEnv, dvmDestroyJNIEnv);
-		RETURN();
-	}
-
-	void *pThread = dvmThreadSelf();
-	ALOGD("pThread = %p", pThread);
-	if (!pThread) {
-		ALOGE("error getting dvmThreadSelf()");
-		RETURN();
-	}
-
-	JNIEnv* env = dvmCreateJNIEnv(pThread);
-	ALOGD("JNIEnv* = %p", env);
+	JNIEnv *env = findJniEnv("libdvm.so");
 
 	if (!env) {
-		ALOGE("error getting JNIEnv");
-		RETURN();
+		env = findJniEnv("libart.so");
+		if (!env) {
+			ALOGE("error getting JNIEnv");
+			RETURN();
+		}
 	}
 
 	jclass c = loadClassFromDex(env, "net/scintill/rilextender/RilExtender", "net.scintill.rilextender.RilExtender",
@@ -169,11 +182,9 @@ static int my_epoll_wait(int epfd, struct epoll_event *events, int maxevents, in
 		// fall through
 	}
 
-	dvmDestroyJNIEnv(env);
-
 	RETURN();
 
-#undef RETURN()
+#undef RETURN
 }
 
 
