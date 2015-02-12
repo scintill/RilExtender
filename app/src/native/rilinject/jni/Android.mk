@@ -17,14 +17,24 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
+
 LOCAL_PATH := $(call my-dir)
+
+# http://stackoverflow.com/a/5476363
+include $(CLEAR_VARS)
+LOCAL_MODULE    := libbase
+LOCAL_SRC_FILES := ../../../../build/native/obj/local/armeabi/libbase.a
+
+include $(PREBUILT_STATIC_LIBRARY)
+
 
 include $(CLEAR_VARS)
 
 LOCAL_MODULE    := librilinject
 LOCAL_SRC_FILES := rilinject.c.arm
 LOCAL_C_INCLUDES := ../../adbi/instruments/base/
-LOCAL_LDLIBS	:= -L ../../../../build/native/obj/local/armeabi -lbase -llog
+LOCAL_LDLIBS	:= -llog
+LOCAL_STATIC_LIBRARIES := libbase
 LOCAL_CFLAGS    := -g
 
 include $(BUILD_SHARED_LIBRARY)
