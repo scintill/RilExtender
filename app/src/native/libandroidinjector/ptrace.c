@@ -27,14 +27,18 @@
 
 static regs_t oldregs;
 
+static int debug = 0;
+
 dl_fl_t ldl;
 
 void ptrace_dump_regs(regs_t *regs, char *msg) {
-    int i = 0;
-    printf("------regs %s-----\n", msg);
-    for (i = 0; i < 18; i++) {
-        printf("r[%02d]=%lx\n", i, regs->uregs[i]);
-    }
+	if (debug) {
+		int i = 0;
+		printf("------regs %s-----\n", msg);
+		for (i = 0; i < 18; i++) {
+			printf("r[%02d]=%lx\n", i, regs->uregs[i]);
+		}
+	}
 }
 
 void ptrace_attach(int pid) {
@@ -382,7 +386,7 @@ static Elf32_Addr get_linker_base(int pid, Elf32_Addr *base_start, Elf32_Addr *b
             if (!linestr) {
                 break;
             }
-            printf("........%s <--\n", line);
+            /*printf("........%s <--\n", line);*/
             if (strlen(line) > atleast && strstr(line, "/system/bin/linker")) {
                 memset(startbuf, 0, sizeof(startbuf));
                 memset(endbuf, 0, sizeof(endbuf));
