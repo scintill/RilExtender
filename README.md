@@ -13,25 +13,26 @@ The app currently shows no icon in the launcher. It's only accessible through An
 
 ### Start the service (only needed once, unless the injected process is restarted)
     am startservice net.scintill.rilextender/.RilExtenderInstaller
-    # If successful, a toast notification saying "RilExtender active" will appear in the upper-right corner of the screen. (Due to Superuser toasts blocking the display, it may take longer to show up than it actually takes to be ready..)
+    # You may have to grant SuperUser permission in a dialog on the phone.
+    # If successful, a toast notification saying "RilExtender active" will appear in the upper-right corner of the screen. (Due to Superuser toasts blocking the display, it may take longer to show up than it actually takes to be ready.)
     # If it's already loaded, no toast is shown.
-    
+
 ### Ping (check if it's alive)
     am broadcast -a net.scintill.rilextender.ping
     # Output: Broadcast completed: result=1, data="Bundle[{birthdate=1423787701642, version=11}]", extras: Bundle[mParcelledData.dataSize=76]
     # If not alive (applies to all functions): Broadcast completed: result=0
-    
+
 ### SIM I/O
     am broadcast -a net.scintill.rilextender.iccio --ei command 192 --ei fileID 28542 --es path 3F007F20 --ei p1 0 --ei p2 0 --ei p3 15  --es data "" --es pin2 "" --es aid ""
     # Output: Broadcast completed: result=1, data="Bundle[return=XXXX]", extras: Bundle[mParcelledData.dataSize=56]
-    
+
 ### oemRilRequestRaw - example for Qualcomm phones
     am broadcast -a net.scintill.rilextender.oemrilrequestraw --es argHex 514f454d484f4f4b13000800080000000100000001000000
     # Output: Broadcast completed: result=1, data="Bundle[return=]", extras: Bundle[mParcelledData.dataSize=36]
     # (Check `logcat -b radio` for responses)
-    # Turn it off 
+    # Turn it off
     am broadcast -a net.scintill.rilextender.oemrilrequestraw --es argHex 514f454d484f4f4b13000800080000000100000000000000
-    
+
 ### oemRilRequestStrings - some phones might let you send AT commands with this
     am broadcast -a net.scintill.rilextender.oemrilrequeststrings --es arg ATI
 
