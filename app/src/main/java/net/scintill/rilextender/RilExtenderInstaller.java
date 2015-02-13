@@ -25,7 +25,6 @@ import android.app.ActivityManager;
 import android.app.IntentService;
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
 import android.util.Log;
 
 import com.SecUpwN.AIMSICD.utils.CMDProcessor;

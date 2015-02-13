@@ -36,7 +36,7 @@ import android.widget.Toast;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
-import java.math.BigInteger;
+import java.math.BigInteger; // XXX should get rid of this eventually, lazy hack
 
 /**
  * RilExtender - access to Android telephony internals
@@ -119,10 +119,12 @@ public class RilExtender implements Handler.Callback {
         Object asyncResult = msg.obj;
 
         try {
-            Throwable asyncResultException = (Throwable) asyncResult.getClass().getField("exception").get(asyncResult);
-            if (asyncResultException != null) throw new RuntimeException("Got an exception in asyncResult", asyncResultException);
-
             PendingResult result = (PendingResult) asyncResult.getClass().getField("userObj").get(asyncResult);
+
+            Throwable asyncResultException = (Throwable) asyncResult.getClass().getField("exception").get(asyncResult);
+            if (asyncResultException != null) {
+                return returnThrowable(result, asyncResultException);
+            }
 
             if (msg.what == MSG_ICCIOFORAPP) {
                 // exception handling based on IccFileHandler#processException()
@@ -130,8 +132,9 @@ public class RilExtender implements Handler.Callback {
                 Object iccIoResult = asyncResult.getClass().getField("result").get(asyncResult);
                 Class iccIoResultClass = iccIoResult.getClass();
                 Throwable iccIoException = (Throwable) iccIoResultClass.getMethod("getException").invoke(iccIoResult);
-                if (iccIoException != null)
-                    throw new RuntimeException("Got an exception from iccIoResult", iccIoException);
+                if (iccIoException != null) {
+                    return returnThrowable(result, iccIoException);
+                }
 
                 int sw1 = iccIoResultClass.getField("sw1").getInt(iccIoResult);
                 int sw2 = iccIoResultClass.getField("sw2").getInt(iccIoResult);
@@ -160,7 +163,15 @@ public class RilExtender implements Handler.Callback {
 
     private boolean returnResult(PendingResult result) {
         result.setResultCode(1);
-        result.setResultData(result.getResultExtras(false).toString()); // XXX for convenience at shell
+        result.setResultData(toString(result.getResultExtras(false))); // XXX for convenience at shell
+        result.finish();
+        return true;
+    }
+
+    private boolean returnThrowable(PendingResult result, Throwable t) {
+        result.setResultCode(-1);
+        result.setResultData(t.getMessage()); // XXX for convenience at shell
+        result.getResultExtras(false).putString("exception", t.getMessage());
         result.finish();
         return true;
     }
@@ -250,7 +261,11 @@ public class RilExtender implements Handler.Callback {
                     } else if (action.equals("net.scintill.rilextender.ping")) {
                         ping(result);
                     } else if (action.equals("net.scintill.rilextender.oemrilrequeststrings")) {
-                        oemRilRequestStrings(result, getStringArrayRequired(intent, "args"));
+                        if (intent.getStringExtra("arg") != null) {
+                            oemRilRequestStrings(result, new String[]{intent.getStringExtra("arg")});
+                        } else {
+                            oemRilRequestStrings(result, getStringArrayRequired(intent, "args"));
+                        }
                     } else if (action.equals("net.scintill.rilextender.oemrilrequestraw")) {
                         oemRilRequestRaw(result, getStringRequired(intent, "argHex"));
                     } else {
@@ -258,11 +273,9 @@ public class RilExtender implements Handler.Callback {
                         result.finish();
                         return;
                     }
-                } catch (RuntimeException t) {
-                    Log.e(TAG, "Uncaught exception", t);
-                    result.getResultExtras(false).putString("exception", t.getMessage());
-                    result.setResultCode(-1);
-                    result.finish();
+                } catch (RuntimeException e) {
+                    Log.e(TAG, "Uncaught exception", e);
+                    returnThrowable(result, e);
                     return;
                 }
             }
@@ -289,31 +302,103 @@ public class RilExtender implements Handler.Callback {
     private static final String PERMISSION_ID = "net.scintill.rilextender.RILEXTENDER_CLIENT";
 
     private static String getStringRequired(Intent i, String k) {
-        if (i.hasExtra(k)) {
-            return i.getStringExtra(k);
-        } else {
-            throw new IllegalArgumentException("expected extra: "+k);
+        String s = null;
+        try {
+            s = (String)i.getExtras().get(k);
+        } catch (ClassCastException | NullPointerException e) {} // fall through
+        if (s == null) {
+            throw new IllegalArgumentException("expected String extra: "+k);
         }
+        return s;
     }
 
     private static int getIntRequired(Intent i, String k) {
-        if (i.hasExtra(k)) {
-            return i.getIntExtra(k, 0);
-        } else {
-            throw new IllegalArgumentException("expected extra: "+k);
+        Integer integer = null;
+        try {
+            integer = (Integer)i.getExtras().get(k);
+        } catch (ClassCastException | NullPointerException e) {} // fall through
+        if (integer == null) {
+            throw new IllegalArgumentException("expected int extra: "+k);
         }
+        return integer;
     }
 
     private static String[] getStringArrayRequired(Intent i, String k) {
-        if (i.hasExtra(k)) {
-            return i.getStringArrayExtra(k);
-        } else {
-            throw new IllegalArgumentException("expected extra: "+k);
+        String[] arr = null;
+        try {
+            arr = (String[])i.getExtras().get(k);
+        } catch (ClassCastException | NullPointerException e) {} // fall through
+        if (arr == null) {
+            throw new IllegalArgumentException("expected String[] extra: "+k);
         }
+        return arr;
+    }
+
+    private static String toString(Bundle bundle) {
+        StringBuffer buff = new StringBuffer("Bundle[");
+        boolean commaFlag = false;
+        for (String k : bundle.keySet()) {
+            if (commaFlag) buff.append(", ");
+            commaFlag = true;
+
+            buff.append(k).append('=');
+            Object o = bundle.get(k);
+            if (o instanceof byte[]) {
+                buff.append(bytesToHexString((byte[])o));
+            } else {
+                buff.append(o);
+            }
+        }
+        buff.append("]");
+        return buff.toString();
+    }
+
+    /*
+     * The following method is Copyright (C) 2006 The Android Open Source Project
+     *
+     * Licensed under the Apache License, Version 2.0 (the "License");
+     * you may not use this file except in compliance with the License.
+     * You may obtain a copy of the License at
+     *
+     *      http://www.apache.org/licenses/LICENSE-2.0
+     *
+     * Unless required by applicable law or agreed to in writing, software
+     * distributed under the License is distributed on an "AS IS" BASIS,
+     * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     * See the License for the specific language governing permissions and
+     * limitations under the License.
+     *
+     *
+     * Converts a byte array into a String of hexadecimal characters.
+     *
+     * @param bytes an array of bytes
+     *
+     * @return hex string representation of bytes array
+     */
+    public static String
+    bytesToHexString(byte[] bytes) {
+        if (bytes == null) return null;
+
+        StringBuilder ret = new StringBuilder(2*bytes.length);
+
+        for (int i = 0 ; i < bytes.length ; i++) {
+            int b;
+
+            b = 0x0f & (bytes[i] >> 4);
+
+            ret.append("0123456789abcdef".charAt(b));
+
+            b = 0x0f & bytes[i];
+
+            ret.append("0123456789abcdef".charAt(b));
+        }
+
+        return ret.toString();
     }
 
     // this gets invoked by native injection code
     static {
         new RilExtender();
     }
+
 }
