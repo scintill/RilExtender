@@ -56,7 +56,7 @@ public class RilExtender implements Handler.Callback {
     public static final int VERSION = 11; // this isn't critical, just for keeping track of what's "installed"
 
     private void iccIOForApp(PendingResult result, int command, int fileId, String path, int p1, int p2, int p3, String data, String pin2, String aid) {
-        Log.d(TAG, "simIo " + fileId + " " + command + " " + p1 + " " + p2 + " " + p3 + " " + path);
+        Log.d(TAG, "simIo " + command + " " + fileId + " " + path + " " + p1 + " " + p2 + " " + p3 + " " + data + " " + pin2  + " " + aid);
 
         try {
             Object RIL = getCommandsInterface(getGsmPhone());
@@ -256,8 +256,8 @@ public class RilExtender implements Handler.Callback {
                         iccIOForApp(result, getIntRequired(intent, "command"), getIntRequired(intent, "fileID"),
                                 getStringRequired(intent, "path"), getIntRequired(intent, "p1"),
                                 getIntRequired(intent, "p2"), getIntRequired(intent, "p3"),
-                                getStringRequired(intent, "data"), getStringRequired(intent, "pin2"),
-                                getStringRequired(intent, "aid"));
+                                intent.getStringExtra("data"), intent.getStringExtra("pin2"),
+                                intent.getStringExtra("aid"));
                     } else if (action.equals("net.scintill.rilextender.ping")) {
                         ping(result);
                     } else if (action.equals("net.scintill.rilextender.oemrilrequeststrings")) {
