@@ -100,6 +100,7 @@ public final class CMDProcessor {
     }
 
     public static CommandResult runSuCommand(String cmd) {
+        Log.d(TAG, "runSuCommand 0 "+cmd);
         ChildProcess proc = startSuCommand(cmd);
         proc.waitFinished();
         return proc.getResult();

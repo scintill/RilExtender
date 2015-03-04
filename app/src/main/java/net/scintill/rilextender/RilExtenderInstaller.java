@@ -85,8 +85,15 @@ public class RilExtenderInstaller extends IntentService {
             Log.d(TAG, "Installing RilExtender service");
 
             // XXX race conditions on loading it.. I guess dlopen()'s idempotent behavior makes it not too bad
-            CommandResult result = CMDProcessor.runSuCommand("logwrapper " + libraryDir +
-                    "/lib__inject.bin__.so " + phonePid + " " + libraryPath);
+            CommandResult result = CMDProcessor.runSuCommand(
+                    libraryDir +"/lib__inject.bin__.so " + phonePid + " " + libraryPath);
+
+            for (String output : new String[]{result.getStdout(), result.getStderr()}) {
+                output = output.trim();
+                if (output.length() != 0) {
+                    Log.d(TAG, "[inject] " + output.replace("\n", "\n[inject] "));
+                }
+            }
 
             if (!result.success()) {
                 throw new RuntimeException("unable to inject phone process: " + result);
