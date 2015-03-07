@@ -111,7 +111,8 @@ android.applicationVariants.all {
             commandLine "${BUILD_TOOL_DX}", "--dex", "--no-strict",
             "--output=${ASSET_DIR}/rilextender.dex",
             "$classDir/net/scintill/rilextender/RilExtender.class",
-            "$classDir/net/scintill/rilextender/RilExtender\$1.class"
+            "$classDir/net/scintill/rilextender/RilExtender\$1.class",
+            "$classDir/net/scintill/rilextender/RilExtender\$2.class"
         }
 
         // Make packaging depend on the above

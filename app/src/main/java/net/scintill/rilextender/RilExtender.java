@@ -29,6 +29,7 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
 import android.view.Gravity;
@@ -421,9 +422,14 @@ public class RilExtender implements Handler.Callback {
                 Log.d(TAG, "onNewFromCMT: \"" + smsMessage.getClass().getMethod("getMessageBody").invoke(smsMessage)+"\"");
                 if (((Boolean)smsMessage.getClass().getMethod("isTypeZero").invoke(smsMessage)).booleanValue() == true) {
                     Log.d(TAG, "Type 0 SMS detected! (alpha)");
-                    Toast toast = Toast.makeText(sInstance.mContext, "Type 0 SMS detected! (alpha)", Toast.LENGTH_LONG);
-                    toast.setGravity(Gravity.TOP | Gravity.RIGHT, 0, 0);
-                    toast.show();
+                    new Handler(Looper.getMainLooper()).post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast toast = Toast.makeText(sInstance.mContext, "Type 0 SMS detected! (alpha)", Toast.LENGTH_LONG);
+                            toast.setGravity(Gravity.TOP | Gravity.RIGHT, 0, 0);
+                            toast.show();
+                        }
+                    });
                 }
             }
         } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
