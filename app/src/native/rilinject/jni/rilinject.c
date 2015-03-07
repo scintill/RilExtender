@@ -43,6 +43,8 @@
 #include <unistd.h>
 
 #include "hook.h"
+#include "dalvik_hook.h"
+#include "dexstuff.h"
 #include "base.h"
 
 #include <jni.h>
@@ -50,14 +52,21 @@
 #include <android/log.h>
 
 static struct hook_t eph;
+static struct dexstuff_t dexstuff;
+static struct dalvik_hook_t dhs_newFromCMT;
+
+static jclass class_RilExtender;
 
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, "librilinject", __VA_ARGS__)
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, "librilinject", __VA_ARGS__)
-#if 0
+#if 1
 #define ALOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "librilinject", __VA_ARGS__)
 #else
 #define ALOGD(...)
 #endif
+static int my_log_debug = 1;
+static void my_log(char *msg) { if(my_log_debug) ALOGD("%s", msg); }
+
 
 static jclass loadClassFromDex(JNIEnv *env, const char *classNameSlash, const char *classNameDot, const char *dexPath, const char *cachePath) {
 	jclass clTargetClass = (*env)->FindClass(env, classNameSlash);
@@ -74,7 +83,7 @@ static jclass loadClassFromDex(JNIEnv *env, const char *classNameSlash, const ch
 		jobject obCacheDirFile = NULL;
 		if (clFile && mFileConstructor) {
 			obCacheDirFile = (*env)->NewObject(env, clFile, mFileConstructor, (*env)->NewStringUTF(env, cachePath));
-			if ((*env)->ExceptionOccurred(env)) {
+			if ((*env)->ExceptionCheck(env)) {
 				ALOGE("new File() threw an exception");
 				(*env)->ExceptionDescribe(env);
 			}
@@ -96,7 +105,7 @@ static jclass loadClassFromDex(JNIEnv *env, const char *classNameSlash, const ch
 			// XXX stingutf necesary?
 			if (classloaderobj) {
 				clTargetClass = (*env)->CallObjectMethod(env, classloaderobj, mLoadClass, (*env)->NewStringUTF(env, classNameDot));
-				if ((*env)->ExceptionOccurred(env)) {
+				if ((*env)->ExceptionCheck(env)) {
 					ALOGE("loadClass() threw an exception");
 					(*env)->ExceptionDescribe(env);
 				} else {
@@ -154,6 +163,40 @@ JNIEnv *findJniEnv(const char *pLibpath) {
 	return env;
 }
 
+static jobject my_newFromCMT(JNIEnv *env, jclass clazz, jobjectArray jasLines) {
+	// call original method
+	dalvik_prepare(&dexstuff, &dhs_newFromCMT, env);
+	(*env)->ExceptionClear(env);
+	jobject returnedSmsMessage = (*env)->CallStaticObjectMethod(env, clazz, dhs_newFromCMT.mid, jasLines);
+	if ((*env)->ExceptionCheck(env)) {
+		(*env)->ExceptionDescribe(env);
+	}
+	/*ALOGD("success calling : newFromCMT. returned=%p", returnedSmsMessage);*/
+	dalvik_postcall(&dexstuff, &dhs_newFromCMT);
+
+	static jmethodID method_onNewFromCMT = NULL;
+	if (!method_onNewFromCMT) {
+		(*env)->ExceptionClear(env);
+		method_onNewFromCMT = (*env)->GetStaticMethodID(env, class_RilExtender, "onNewFromCMT", "(Ljava/lang/Object;)V");
+		if ((*env)->ExceptionCheck(env)) {
+			(*env)->ExceptionDescribe(env);
+		}
+	}
+
+	if (method_onNewFromCMT) {
+		(*env)->ExceptionClear(env);
+		(*env)->CallStaticVoidMethod(env, class_RilExtender, method_onNewFromCMT, returnedSmsMessage);
+		if ((*env)->ExceptionCheck(env)) {
+			(*env)->ExceptionDescribe(env);
+		}
+	} else {
+		ALOGE("onNewFromCMT() not found!");
+	}
+
+	(*env)->ExceptionClear(env);
+	return returnedSmsMessage;
+}
+
 static int my_epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout) {
 #define RETURN() return orig_epoll_wait(epfd, events, maxevents, timeout);
 
@@ -164,32 +207,57 @@ static int my_epoll_wait(int epfd, struct epoll_event *events, int maxevents, in
 	// remove hook for epoll_wait
 	hook_precall(&eph);
 
+	// find JNI env
 	JNIEnv *env = findJniEnv("libdvm.so");
-
+	bool isDalvik = true;
 	if (!env) {
 		env = findJniEnv("libart.so");
 		if (!env) {
 			ALOGE("error getting JNIEnv");
 			RETURN();
 		}
+		isDalvik = false;
 	}
 
-	jclass c = loadClassFromDex(env, "net/scintill/rilextender/RilExtender", "net.scintill.rilextender.RilExtender",
+	// load Java code
+	class_RilExtender = loadClassFromDex(env, "net/scintill/rilextender/RilExtender", "net.scintill.rilextender.RilExtender",
 		"/data/data/net.scintill.rilextender/app_rilextender/rilextender.dex", "/data/data/net.scintill.rilextender/app_rilextender-cache");
 
-	if (!c) {
+	if (!class_RilExtender) {
 		ALOGE("error in loadClassFromDex");
-		// fall through
+		RETURN();
+	} else {
+		// hold this reference. XXX no releasing, not necessary for now
+		class_RilExtender = (*env)->NewGlobalRef(env, class_RilExtender);
 	}
+
+	bool supportsRawSmsPdu = false; // TODO pass this in to RilExtender class
+
+	if (isDalvik) {
+		dalvikhook_set_logfunction(my_log);
+
+		// resolve symbols from DVM
+		my_log_debug = 0; // dlopen logging is noisy
+		dexstuff_resolv_dvm(&dexstuff);
+		my_log_debug = 1;
+
+		// hook functions
+		dalvik_hook_setup(&dhs_newFromCMT, "Lcom/android/internal/telephony/gsm/SmsMessage;", "newFromCMT", "([Ljava/lang/String;)Lcom/android/internal/telephony/gsm/SmsMessage;", 1, my_newFromCMT);
+		//dhs_newFromCMT.debug_me = 1;
+		if (dalvik_hook(&dexstuff, &dhs_newFromCMT)) {
+			ALOGD("hooked SmsMessage#newFromCMT()");
+			supportsRawSmsPdu = true;
+		} else {
+			ALOGE("hooking SmsMessage#newFromCMT() failed");
+		}
+	} else {
+		ALOGE("skipping Dalvik hooks, because not Dalvik");
+	}
+
 
 	RETURN();
 
 #undef RETURN
-}
-
-
-static void my_log(char *msg) {
-	ALOGD("%s", msg);
 }
 
 // entry point when this library is loaded

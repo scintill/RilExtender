@@ -375,8 +375,7 @@ public class RilExtender implements Handler.Callback {
      *
      * @return hex string representation of bytes array
      */
-    public static String
-    bytesToHexString(byte[] bytes) {
+    protected static String bytesToHexString(byte[] bytes) {
         if (bytes == null) return null;
 
         StringBuilder ret = new StringBuilder(2*bytes.length);
@@ -396,9 +395,40 @@ public class RilExtender implements Handler.Callback {
         return ret.toString();
     }
 
+    static RilExtender sInstance;
     // this gets invoked by native injection code
     static {
-        new RilExtender();
+        sInstance = new RilExtender();
+
+		// make sure this class is loaded, so it can be hooked
+        try {
+            Class.forName("com.android.internal.telephony.gsm.SmsMessage");
+        } catch (ClassNotFoundException e) {
+        }
+    }
+
+    /**
+     * Hooks
+     */
+
+    /**
+     * com/android/internal/telephony/gsm/SmsMessage#newFromCMT().
+     * @param smsMessage The message object returned by the hooked function.
+     */
+    public static void onNewFromCMT(Object smsMessage) {
+        try {
+            if (smsMessage != null) {
+                Log.d(TAG, "onNewFromCMT: \"" + smsMessage.getClass().getMethod("getMessageBody").invoke(smsMessage)+"\"");
+                if (((Boolean)smsMessage.getClass().getMethod("isTypeZero").invoke(smsMessage)).booleanValue() == true) {
+                    Log.d(TAG, "Type 0 SMS detected! (alpha)");
+                    Toast toast = Toast.makeText(sInstance.mContext, "Type 0 SMS detected! (alpha)", Toast.LENGTH_LONG);
+                    toast.setGravity(Gravity.TOP | Gravity.RIGHT, 0, 0);
+                    toast.show();
+                }
+            }
+        } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+            Log.d(TAG, "Exception in onNewFromCMT()", e);
+        }
     }
 
 }
